@@ -1,0 +1,6 @@
+{
+  "name": "Bangun Datar Adventure — Komposisi Bangun Datar Kelas 4 SD",
+  "description": "Aplikasi multimedia pembelajaran interaktif Matematika Kelas 4 SD (Fase B) tentang Komposisi Bangun Datar berbasis Prinsip Multimedia Mayer dan Komunikasi Dua Arah.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

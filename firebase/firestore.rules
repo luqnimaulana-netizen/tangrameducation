@@ -1,0 +1,122 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 4 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email == 'luqnirahman@gmail.com';
+    }
+
+    function isAuthorizedTeacher() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() && (
+          request.auth.token.firebase.sign_in_provider == 'password' ||
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        )
+      );
+    }
+
+    // Validation Blueprint for Reflection (Pillar 2: Anti-Update-Gap)
+    function isValidReflection(data) {
+      return data.keys().hasAll([
+        'id',
+        'studentName',
+        'studentClass',
+        'feeling',
+        'message',
+        'createdAt',
+        'createdAtTimestamp',
+        'serverCreatedAt',
+        'source',
+        'syncStatus'
+      ]) &&
+      data.keys().hasOnly([
+        'id',
+        'studentName',
+        'studentClass',
+        'feeling',
+        'message',
+        'createdAt',
+        'createdAtTimestamp',
+        'serverCreatedAt',
+        'source',
+        'syncStatus',
+        'sheetSyncedAt',
+        'lastSyncError'
+      ]) &&
+      data.id is string && data.id.size() >= 4 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.studentName is string && data.studentName.trim().size() >= 2 && data.studentName.size() <= 100 &&
+      data.studentClass is string && data.studentClass.trim().size() >= 1 && data.studentClass.size() <= 32 &&
+      data.feeling is string && (data.feeling == 'seru' || data.feeling == 'bosan') &&
+      data.message is string && data.message.size() <= 1000 &&
+      data.createdAt is string && data.createdAt.size() >= 10 && data.createdAt.size() <= 40 &&
+      data.createdAtTimestamp is number && data.createdAtTimestamp > 1700000000000 &&
+      data.serverCreatedAt is timestamp &&
+      data.source is string && data.source == 'bangun-datar-adventure-v2' &&
+      data.syncStatus is string && (data.syncStatus == 'synced' || data.syncStatus == 'pending' || data.syncStatus == 'failed') &&
+      (!('sheetSyncedAt' in data) || (data.sheetSyncedAt is string && data.sheetSyncedAt.size() <= 40)) &&
+      (!('lastSyncError' in data) || (data.lastSyncError is string && data.lastSyncError.size() <= 300));
+    }
+
+    // Reflections Collection
+    match /reflections/{reflectionId} {
+      allow get: if isValidId(reflectionId) && isAuthorizedTeacher() && existing().source == 'bangun-datar-adventure-v2';
+
+      allow list: if isSignedIn() &&
+        (
+          (request.auth.token.email_verified == true && request.auth.token.email == 'luqnirahman@gmail.com') ||
+          request.auth.token.firebase.sign_in_provider == 'password'
+        ) &&
+        existing().source == 'bangun-datar-adventure-v2';
+
+      allow create: if isValidId(reflectionId) &&
+        isValidReflection(incoming()) &&
+        incoming().id == reflectionId &&
+        incoming().serverCreatedAt == request.time;
+
+      allow update: if isValidId(reflectionId) &&
+        isValidReflection(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().studentName == existing().studentName &&
+        incoming().studentClass == existing().studentClass &&
+        incoming().feeling == existing().feeling &&
+        incoming().message == existing().message &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().createdAtTimestamp == existing().createdAtTimestamp &&
+        incoming().serverCreatedAt == existing().serverCreatedAt &&
+        incoming().source == existing().source &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['syncStatus', 'sheetSyncedAt', 'lastSyncError']);
+
+      allow delete: if false;
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isBootstrappedAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+  }
+}
